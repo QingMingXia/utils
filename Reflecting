@@ -1,0 +1,18 @@
+ObjectMapper is very useful tool ，we usually use it to convert  String Ojbect  to Object Object
+here is its usage：
+
+  
+  public static <T> T constructObject(String jsonStr, Class<T> clazz)
+    {
+        ObjectMapper objectMapper = new ObjectMapper();
+        T t = null;
+        try
+        {
+            t = objectMapper.readValue(jsonStr, clazz);
+        } catch (Exception e)
+        {
+            LOG.error(" jsonStr : " + jsonStr, e);
+            return null;
+        }
+        return t;
+    }
