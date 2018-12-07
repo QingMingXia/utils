@@ -1,0 +1,272 @@
+自定义ServicesLoader来实现根据配置使用不通的SPI实现从而实现项目扩展
+
+一 、  都知道Java中的SPI技术，也是dubbo中实验的，
+
+通过这个案例可以快速的了解spi是什么？ https://my.oschina.net/lenglingx/blog/879292
+
+这个案例就是直接简单使用的spi，都说dubbo是也是使用spi来做扩展的，去看了一下dubbo的介绍，了解到了：ExtensionLoader.java
+
+
+
+且dubbo使用是通过配置来的，如注册协议有，redis,和zookeeper。
+
+
+
+
+
+这里我们就介绍如何实现通过配置来和spi结合实现dubbo这样的。
+
+二、  这个项目介绍，log-parent,为整体项目，内部有4个项目。
+
+log为api的接口项目
+
+alog为ALog实现
+
+blog为BLog实现
+
+logTest为这个 log的测试项目
+
+log项目的Log接口
+
+package com.tspi.log;
+
+public interface Logger {
+
+	public void debug(String logger);
+	
+	public void info(String logger);
+	
+	public void warn(String logger);
+	
+	public void error(String logger);
+	
+}
+CustomServiceLoader自定义serviceLoader
+
+package com.tspi.log;
+
+import java.net.URL;
+import java.util.Enumeration;
+import java.util.HashMap;
+import java.util.Map;
+
+
+import org.apache.commons.io.IOUtils;
+
+public class CustomServiceLoader {
+
+	public static final String MAPPING_CONFIG_PREFIX = "META-INF/services";
+
+	public static Map mservices;
+	
+	public static <S> Map<String, Class<S>> loade(Class<S> service) throws Exception {
+		String mappingConfigFile = MAPPING_CONFIG_PREFIX + "/log/" + service.getName();
+		// 由于一个接口的实现类可能存在多个jar包中的META-INF目录下，所以下面使用getResources返回一个URL数组
+		System.out.println("configFile:" + mappingConfigFile);
+		Enumeration<URL> configFileUrls = CustomServiceLoader.class.getClassLoader().getResources(mappingConfigFile);
+		if (configFileUrls == null) {
+			return null;
+		}
+		//List<S> services = new LinkedList<S>();
+		mservices = new HashMap<String, Class<S>>();
+
+		while (configFileUrls.hasMoreElements()) {
+			URL configFileUrl = configFileUrls.nextElement();
+			String configContent = IOUtils.toString(configFileUrl.openStream());
+			System.out.println("configContent:");
+			System.out.println(configContent);
+			System.out.println("configContent  --end");
+			String[] serviceNames = configContent.split("\n");
+			for (String serviceName : serviceNames) {
+				System.out.println("serviceName: " + serviceName);
+				String[] tempServiceName = serviceName.split("=");
+				System.out.println("tmpServiceName:" + tempServiceName[0] + "," +tempServiceName[1]);
+				
+				ClassLoader classLoader = CustomServiceLoader.class.getClassLoader();
+				System.out.println("classloader:" + classLoader);
+				Class class1 = classLoader.loadClass(tempServiceName[1]);
+				System.out.println("class1" + class1);
+				
+				Object serviceInstance = class1.newInstance();
+				
+				Logger log = (Logger)serviceInstance;
+				log.warn("TEST!!!");
+				//services.add((S) serviceInstance);
+				mservices.put(tempServiceName[0],  serviceInstance);
+			}
+		}
+		System.out.println("-----");
+		System.out.println("mservices:" + mservices.toString());
+		return mservices;
+	}
+	
+	public static Object getType(String type) {
+		System.out.println("type:" + type);
+		System.out.println("-----");
+		System.out.println("mservices:" + mservices.toString());
+		return mservices.get(type);
+	
+	}
+
+}
+alog项目：
+
+ALogger实现：
+
+package com.tspi.alog;
+
+import com.tspi.log.Logger;
+
+public class ALogger implements Logger{
+	
+	public ALogger() {
+		
+	}
+
+	public void debug(String logger) {
+		System.out.println("ALogger-->debug: " + logger);
+	}
+
+	public void info(String logger) {
+		System.out.println("ALogger-->info: " + logger);	
+	}
+
+	public void warn(String logger) {
+		System.out.println("ALogger-->warn: " + logger);
+	}
+
+	public void error(String logger) {
+		System.out.println("ALogger-->error: " + logger);
+	}
+
+}
+同时在resources目录下添加
+
+META-INF/services/log/com.tspi.log.Logger  这个文件。
+
+内容为
+
+alog=com.tspi.alog.ALogger
+blog项目同alog 项目已样：
+
+package com.tspi.blog;
+
+import com.tspi.log.Logger;
+
+public class BLogger implements Logger{
+
+	public BLogger() {
+		
+	}
+	
+	public void debug(String logger) {
+		System.out.println("BLogger-->debug: " + logger);
+	}
+
+	public void info(String logger) {
+		System.out.println("BLogger-->info: " + logger);	
+	}
+
+	public void warn(String logger) {
+		System.out.println("BLogger-->warn: " + logger);
+	}
+
+	public void error(String logger) {
+		System.out.println("BLogger-->error: " + logger);
+	}
+}
+同样在resources目录下添加
+
+META-INF/services/log/com.tspi.log.Logger  这个文件。
+
+内容为
+
+blog=com.tspi.blog.BLogger
+logTest项目：
+
+App.java
+
+package com.tspi.logtest;
+
+import java.util.ResourceBundle;
+
+import com.tspi.log.CustomServiceLoader;
+import com.tspi.log.Logger;
+
+/**
+ * Hello world!
+ *
+ */
+public class App {
+	public static void main(String[] args) {
+		System.out.println("Hello World!");
+		
+		ResourceBundle log = ResourceBundle.getBundle("log");
+		
+		String logString = log.getString("logType");
+		System.out.println("logType:" + logString);
+		
+		CustomServiceLoader customServiceLoader = new CustomServiceLoader();
+		
+		try {
+			customServiceLoader.loade(Logger.class);
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		
+		System.out.println("logString:" + logString);
+		Logger logger = (Logger) customServiceLoader.getType(logString);
+		
+		logger.info("我爱你。。。");
+		
+		
+	}
+}
+这个项目依赖着前面三个项目，在这个项目的resources这个目录下新建log.properties文件，内容如下：
+
+logType=blog
+可以是alog或者blog。配置不通，将调用不通的实现。
+
+运行如下：
+
+Hello World!
+logType:blog
+configFile:META-INF/services/log/com.tspi.log.Logger
+configContent:
+alog=com.tspi.alog.ALogger
+configContent  --end
+serviceName: alog=com.tspi.alog.ALogger
+tmpServiceName:alog,com.tspi.alog.ALogger
+classloader:sun.misc.Launcher$AppClassLoader@73d16e93
+class1class com.tspi.alog.ALogger
+ALogger-->warn: TEST!!!
+configContent:
+blog=com.tspi.blog.BLogger
+configContent  --end
+serviceName: blog=com.tspi.blog.BLogger
+tmpServiceName:blog,com.tspi.blog.BLogger
+classloader:sun.misc.Launcher$AppClassLoader@73d16e93
+class1class com.tspi.blog.BLogger
+BLogger-->warn: TEST!!!
+-----
+mservices:{blog=com.tspi.blog.BLogger@14ae5a5, alog=com.tspi.alog.ALogger@7f31245a}
+logString:blog
+type:blog
+-----
+mservices:{blog=com.tspi.blog.BLogger@14ae5a5, alog=com.tspi.alog.ALogger@7f31245a}
+BLogger-->info: 我爱你。。。
+如果配置的是alog，
+
+最后打印将会是ALogger-->info: 我爱你。。。
+
+
+
+
+
+三、  后记
+
+这基本就是一个很简单的自定义servicesLoader的实现。基本实现了读配置来觉得调不通的SPI的实现
+
+就像使用dubbo注册时你配置的是的redis就使用了redis注册中心，zookeeper就使用了zookeeper注册中心，我们这是配置alog就使用了ALogger实现，配置blog就使用了BLogger实现一样。
+
+这个例子的地址： https://git.oschina.net/lenglingx-163/log-parent.git
